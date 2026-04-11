@@ -6,6 +6,7 @@ import re
 import types
 from copy import deepcopy
 from pathlib import Path
+from .AddModules import *
 
 import torch
 import torch.nn as nn
@@ -367,7 +368,7 @@ class DetectionModel(BaseModel):
         >>> results = model.predict(image_tensor)
     """
 
-    def __init__(self, cfg="yolo26n.yaml", ch=3, nc=None, verbose=True):
+    def __init__(self, cfg="yolov26n.yaml", ch=3, nc=None, verbose=True):
         """Initialize the YOLO detection model with the given config and parameters.
 
         Args:
@@ -406,13 +407,23 @@ class DetectionModel(BaseModel):
                 if self.end2end:
                     output = output["one2many"]
                 return output["feats"]
+            
 
             self.model.eval()  # Avoid changing batch statistics until training begins
             m.training = True  # Setting it to True to properly return strides
-            m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
+            #m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
+            try:
+                m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward on CPU
+            except RuntimeError:
+                            try:
+                                self.model.to(torch.device('cuda'))
+                                m.stride = torch.tensor([s / x.shape[-2] for x in _forward(
+                                    torch.zeros(1, ch, s, s).to(torch.device('cuda')))])  # forward on CUDA
+                            except RuntimeError as error:
+                                        raise error
             self.stride = m.stride
-            self.model.train()  # Set model back to training(default) mode
             m.bias_init()  # only run once
+            self.model.train()  # Set model back to training(default) mode
         else:
             self.stride = torch.Tensor([32])  # default stride, e.g., RTDETR
 
@@ -1608,6 +1619,10 @@ def parse_model(d, ch, verbose=True):
             SCDown,
             C2fCIB,
             A2C2f,
+            SimAM,RailSimAM_Lite,
+            SimpleStem , VisionClueMerge , VSSBlock_YOLO , XSSBlock,
+            HGBlock_DyT,ResNetBlock,
+            RailSPPCSPC,
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments

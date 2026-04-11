@@ -1,0 +1,15 @@
+path: /root/autodl-tmp/Detect_450 # dataset root dir
+train: images/train  # train images (relative to 'path')
+val: images/test    # val images (relative to 'path')
+test:    # test images (optional)
+names:
+- rust
+- Gauge corner squats
+- head checks
+- cacat las
+- dust
+- abration
+- Rust
+- Crack
+- squats
+nc: 9
