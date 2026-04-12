@@ -147,7 +147,6 @@ class BaseValidator:
         if self.training:
             self.device = trainer.device
             self.data = trainer.data
-            # Force FP16 val during training
             self.args.half = self.device.type != "cpu" and trainer.amp
             model = trainer.ema.ema or trainer.model
             if trainer.args.compile and hasattr(model, "_orig_mod"):
@@ -249,6 +248,19 @@ class BaseValidator:
         if self.training:
             model.float()
             # Reduce loss across all GPUs
+            # Force FP16 val during training
+            # ------------- 新添加的核心逻辑 ------------ #
+            if self.args.save_json and self.jdict:                              # 检查 save_json 是否为 True 且 self.jdict (预测结果列表) 是否有内容
+                pred_json_path = self.save_dir / "predictions.json"
+                LOGGER.info(f"Saving training validation predictions to {pred_json_path}...")
+                with open(str(pred_json_path), "w") as f:
+                    json.dump(self.jdict, f)                                    # 保存预测结果
+                LOGGER.info(f"Calculating COCO metrics for epoch validation...")
+                stats = self.eval_json(stats)                                   # ★★★ 触发 COCO API 评估 ★★★
+                stats['fitness'] = stats['metrics/mAP50-95(B)']                 # 更新 fitness 值，用于判断最佳模型 ('best.pt') ，这里默认使用 mAP50-95 作为 fitness
+                # 你可以根据需要调整 fitness 的计算方式，例如结合 mAP50
+                #    stats['fitness'] = 0.1 * stats['metrics/mAP50(B)'] + 0.9 * stats['metrics/mAP50-95(B)']
+            # ------------- 新添加的核心逻辑结束 ------------ #
             loss = self.loss.clone().detach()
             if trainer.world_size > 1:
                 dist.reduce(loss, dst=0, op=dist.ReduceOp.AVG)
@@ -264,11 +276,18 @@ class BaseValidator:
                     *tuple(self.speed.values())
                 )
             )
-            if self.args.save_json and self.jdict:
-                with open(str(self.save_dir / "predictions.json"), "w", encoding="utf-8") as f:
-                    LOGGER.info(f"Saving {f.name}...")
-                    json.dump(self.jdict, f)  # flatten and save
-                stats = self.eval_json(stats)  # update stats
+            # ------------- 新添加的核心逻辑 ------------ #
+            if self.args.save_json and self.jdict:                              # 检查 save_json 是否为 True 且 self.jdict (预测结果列表) 是否有内容
+                pred_json_path = self.save_dir / "predictions.json"
+                LOGGER.info(f"Saving training validation predictions to {pred_json_path}...")
+                with open(str(pred_json_path), "w") as f:
+                    json.dump(self.jdict, f)                                    # 保存预测结果
+                LOGGER.info(f"Calculating COCO metrics for epoch validation...")
+                stats = self.eval_json(stats)                                   # ★★★ 触发 COCO API 评估 ★★★
+                stats['fitness'] = stats['metrics/mAP50-95(B)']                 # 更新 fitness 值，用于判断最佳模型 ('best.pt') ，这里默认使用 mAP50-95 作为 fitness
+                # 你可以根据需要调整 fitness 的计算方式，例如结合 mAP50
+                #    stats['fitness'] = 0.1 * stats['metrics/mAP50(B)'] + 0.9 * stats['metrics/mAP50-95(B)']
+            # ------------- 新添加的核心逻辑结束 ------------ #
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
             return stats

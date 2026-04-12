@@ -1622,7 +1622,7 @@ def parse_model(d, ch, verbose=True):
             SimAM,RailSimAM_Lite,
             SimpleStem , VisionClueMerge , VSSBlock_YOLO , XSSBlock,
             HGBlock_DyT,ResNetBlock,
-            RailSPPCSPC,
+            RailSPPCSPC,EMA,HGBlock_EMA,
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments

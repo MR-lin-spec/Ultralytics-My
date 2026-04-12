@@ -409,30 +409,28 @@ def plt_settings(rcparams=None, backend="Agg"):
     return decorator
 
 
-def set_logging(name="LOGGING_NAME", verbose=True):
+def set_logging(name="LOGGING_NAME", verbose=True, log_file="runs/train/exp/train.log"):
     """Set up logging with UTF-8 encoding and configurable verbosity.
 
     This function configures logging for the Ultralytics library, setting the appropriate logging level and formatter
     based on the verbosity flag and the current process rank. It handles special cases for Windows environments where
     UTF-8 encoding might not be the default.
+    
+    **Modified**: Now supports simultaneous file output with overwrite mode for training resumption.
 
     Args:
         name (str): Name of the logger.
         verbose (bool): Flag to set logging level to INFO if True, ERROR otherwise.
+        log_file (str | Path | None): Path to save log file. If provided, logs will be written to this file 
+            in overwrite mode ('w'), ensuring fresh logs on training restart.
 
     Returns:
         (logging.Logger): Configured logger object.
 
     Examples:
-        >>> set_logging(name="ultralytics", verbose=True)
+        >>> set_logging(name="ultralytics", verbose=True, log_file="runs/train/exp/train.log")
         >>> logger = logging.getLogger("ultralytics")
-        >>> logger.info("This is an info message")
-
-    Notes:
-        - On Windows, this function attempts to reconfigure stdout to use UTF-8 encoding if possible.
-        - If reconfiguration is not possible, it falls back to a custom formatter that handles non-UTF-8 environments.
-        - The function sets up a StreamHandler with the appropriate formatter and level.
-        - The logger's propagate flag is set to False to prevent duplicate logging in parent loggers.
+        >>> logger.info("This appears on screen and in file")
     """
     level = logging.INFO if verbose and RANK in {-1, 0} else logging.ERROR  # rank in world for Multi-GPU trainings
 
@@ -451,7 +449,8 @@ def set_logging(name="LOGGING_NAME", verbose=True):
             formatted_message = super().format(record)
             return emojis(formatted_message)
 
-    formatter = PrefixFormatter("%(message)s")
+    formatter = PrefixFormatter("%(asctime)s - %(message)s" if log_file else "%(message)s")
+    # Note: Added timestamp for file logs, kept clean format for console
 
     # Handle Windows UTF-8 encoding issues
     if WINDOWS and hasattr(sys.stdout, "encoding") and sys.stdout.encoding != "utf-8":
@@ -467,21 +466,99 @@ def set_logging(name="LOGGING_NAME", verbose=True):
 
     # Create and configure the StreamHandler with the appropriate formatter and level
     stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter if not log_file else PrefixFormatter("%(message)s"))
     stream_handler.setLevel(level)
 
     # Set up the logger
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    
+    # Remove existing handlers to prevent duplicates on re-initialization
+    logger.handlers.clear()
+    
     logger.addHandler(stream_handler)
+    
+    # ===== MODIFICATION 1: Add FileHandler for simultaneous file output =====
+    if log_file is not None:
+        log_file = Path(log_file)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Use 'w' mode to overwrite existing log (requirement: overwrite on restart)
+        file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+        file_formatter = PrefixFormatter("%(asctime)s [%(levelname)s] %(message)s")
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(level)
+        logger.addHandler(file_handler)
+    
     logger.propagate = False
     return logger
 
 
-# Set logger
-LOGGER = set_logging(LOGGING_NAME, verbose=VERBOSE)  # define globally (used in train.py, val.py, predict.py, etc.)
-logging.getLogger("sentry_sdk").setLevel(logging.CRITICAL + 1)
+def add_log_file(log_file):
+    """Add file output to existing LOGGER dynamically with auto-increment naming.
+    
+    Useful when training run directory is created after LOGGER initialization.
+    If log file already exists, automatically creates train_1.log, train_2.log, etc.
+    to preserve previous training logs.
+    
+    Args:
+        log_file (str | Path): Base path to log file (e.g., "runs/detect/train/train.log").
+            If file exists, will use train_1.log, train_2.log, etc.
+    """
+    from pathlib import Path
+    import logging
+    
+    log_file = Path(log_file)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Remove existing file handlers to avoid duplicate file outputs
+    for handler in LOGGER.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            LOGGER.removeHandler(handler)
+    
+    # ===== MODIFICATION: Auto-increment filename if exists =====
+    def get_unique_log_path(base_path: Path) -> Path:
+        """Generate unique log path with _1, _2, _3 suffix if file exists."""
+        if not base_path.exists():
+            return base_path
+        
+        stem = base_path.stem  # "train"
+        suffix = base_path.suffix  # ".log"
+        parent = base_path.parent
+        
+        n = 1
+        while True:
+            new_path = parent / f"{stem}_{n}{suffix}"
+            if not new_path.exists():
+                return new_path
+            n += 1
+    
+    unique_log_path = get_unique_log_path(log_file)
+    
+    # Create file handler with 'w' mode (fresh file for this training)
+    file_handler = logging.FileHandler(unique_log_path, mode='w', encoding='utf-8')
+    
+    # Use timestamp format for file logs
+    class FileFormatter(logging.Formatter):
+        def format(self, record):
+            if record.levelno == logging.WARNING:
+                record.msg = f"WARNING {record.msg}"
+            elif record.levelno == logging.ERROR:
+                record.msg = f"ERROR {record.msg}"
+            return emojis(super().format(record))
+    
+    file_handler.setFormatter(FileFormatter("%(asctime)s [%(levelname)s] %(message)s"))
+    file_handler.setLevel(LOGGER.level)
+    LOGGER.addHandler(file_handler)
+    
+    # Log the actual file being used
+    if unique_log_path != log_file:
+        LOGGER.info(f"Previous log found. Saving to new file: {unique_log_path}")
+    else:
+        LOGGER.info(f"Training logs will be saved to: {unique_log_path}")
 
+# Set logger (keep existing global LOGGER)
+LOGGER = set_logging(LOGGING_NAME, verbose=VERBOSE)
 
 def emojis(string=""):
     """Return platform-dependent emoji-safe version of string."""

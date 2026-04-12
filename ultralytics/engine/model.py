@@ -738,7 +738,11 @@ class Model(torch.nn.Module):
                 - optimizer (str): Optimizer to use for training.
                 - lr0 (float): Initial learning rate.
                 - patience (int): Epochs to wait for no observable improvement for early stopping of training.
-                - augmentations (list[Callable]): List of augmentation functions to apply during training.
+                - project (str): Project name/directory for saving training runs.
+                - name (str): Experiment name for the training run.
+                - exist_ok (bool): Whether to overwrite existing experiment directory.
+                - save_log (bool): **NEW** Whether to save training logs to file. If True, logs are saved to 
+                    {project}/{name}/{name}.log in overwrite mode.
 
         Returns:
             (ultralytics.utils.metrics.DetMetrics | None): Training metrics if available and training is successful;
@@ -747,6 +751,8 @@ class Model(torch.nn.Module):
         Examples:
             >>> model = YOLO("yolo26n.pt")
             >>> results = model.train(data="coco8.yaml", epochs=3)
+            >>> results = model.train(data="coco8.yaml", epochs=3, save_log=True)  # Save to runs/detect/train/train.log
+            >>> results = model.train(data="coco8.yaml", epochs=3, project="my_project", name="exp", save_log=True)
         """
         self._check_is_pytorch_model()
         if hasattr(self.session, "model") and self.session.model.id:  # Ultralytics HUB session with loaded model
@@ -766,6 +772,44 @@ class Model(torch.nn.Module):
             "task": self.task,
         }  # method defaults
         args = {**overrides, **custom, **kwargs, "mode": "train", "session": self.session}  # prioritizes rightmost args
+        
+        # ===== MODIFICATION: Parse log file path and configure logging =====
+        log_file = args.pop("log_file", None)  # Explicit log file path
+        save_log = args.pop("save_log", False)  # Flag to auto-generate log path
+        
+        if log_file or save_log:
+            from ultralytics.utils import add_log_file
+            
+            if log_file is not None:
+                # Use explicitly provided path
+                log_path = Path(log_file)
+            else:
+                # Auto-generate path: runs/{task}/{name}/{name}.log
+                # e.g., runs/detect/train/train.log  or  runs/segment/exp/segment.log
+                task = args.get("task", "detect")  # Get task type (detect, segment, classify, etc.)
+                project = args.get("project")   # Default: runs/detect, runs/segment, etc.
+                name = args.get("name", "train")
+                exist_ok = args.get("exist_ok", False)
+                
+                # Build save directory path
+                save_dir = Path(project) / task / name
+                
+                # Handle existing directory (mirror trainer logic: exp -> exp2 -> exp3...)
+                if save_dir.exists() and not exist_ok:
+                    n = 2
+                    while (Path(project) / f"{name}{n}").exists():
+                        n += 1
+                    save_dir = Path(project) / f"{name}{n}"
+                    # Update args so trainer uses the same directory
+                    args["name"] = f"{name}{n}"
+                
+                # Log file path: runs/detect/train/train.log (与 weights/, args.yaml 同级)
+                log_path = save_dir / f"{args['name']}.log"
+            
+            # Configure LOGGER to write to file (overwrite mode for fresh training)
+            add_log_file(log_path)
+            LOGGER.info(f"Training logs will be saved to: {log_path}")
+        
         if args.get("resume"):
             if args["resume"] is True:  # resume=True (boolean) uses current model as checkpoint
                 if self.ckpt and self.ckpt.get("epoch", -1) >= 0 and self.ckpt.get("optimizer") is not None:
