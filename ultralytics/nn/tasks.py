@@ -1620,7 +1620,7 @@ def parse_model(d, ch, verbose=True):
             C2fCIB,
             A2C2f,
             SimAM,RailSimAM_Lite,
-            SimpleStem , VisionClueMerge , VSSBlock_YOLO , XSSBlock,
+#            SimpleStem , VisionClueMerge , VSSBlock_YOLO , XSSBlock,
             HGBlock_DyT,ResNetBlock,
             RailSPPCSPC,EMA,HGBlock_EMA,
         }

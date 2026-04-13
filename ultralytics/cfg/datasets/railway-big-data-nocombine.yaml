@@ -1,4 +1,4 @@
-path: /root/autodl-tmp/RailDetectDataset/Detect_4090_no_combine # dataset root dir
+path: /root/autodl-tmp/Detect_4090_no_combine # dataset root dir
 train: images/train  # train images (relative to 'path')
 val: images/test    # val images (relative to 'path')
 test:    # test images (optional)

@@ -212,8 +212,8 @@ class TaskAlignedAssigner(nn.Module):
         Returns:
             (torch.Tensor): IoU values between each pair of boxes.
         """
-        return bbox_iou(gt_bboxes, pd_bboxes, xywh=False, CIoU=True).squeeze(-1).clamp_(0) #不使用小目标损失函数
-        #return shape_iou(gt_bboxes, pd_bboxes, xywh=False).squeeze(-1).clamp_(0)
+        #return bbox_iou(gt_bboxes, pd_bboxes, xywh=False, CIoU=True).squeeze(-1).clamp_(0)
+        return shape_iou(gt_bboxes, pd_bboxes, xywh=False).squeeze(-1).clamp_(0)
 
     def select_topk_candidates(self, metrics, topk_mask=None):
         """Select the top-k candidates based on the given metrics.

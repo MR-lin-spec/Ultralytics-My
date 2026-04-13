@@ -4,14 +4,14 @@ from ultralytics import RTDETR
 import torch as th
 import re
 
-model=YOLO('yolov26m.pt')
+model=YOLO('/root/Ultralytics-My/ultralytics/cfg/models/11/yolo11.yaml')
 results = model.train(
     data="/root/Ultralytics-My/ultralytics/cfg/datasets/railway-big-data-nocombine.yaml",
     epochs=100,
     patience=50,
     save_json=True,
     save_log=True,
-    log_file="runs/train/exp/train_nocombine_yolo26m.log",
+    log_file="runs/train/exp/train_nocombine_yolo11.log",
     
     # 优化器设置（针对部分训练）
     lr0=0.0001,        # 可以使用较大学习率，因为大部分参数已冻结
