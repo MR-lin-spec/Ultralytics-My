@@ -185,9 +185,10 @@ def get_trainable_params_info(model):
 # ==================== 主程序 ====================
 
 # 1. 创建模型
-config_path = "/root/Ultralytics-My/ultralytics/cfg/models/rt-detr/rtdetr-l-simam-dynamic-simam-smallloss.yaml"
+config_path = "/root/Ultralytics-My/ultralytics/cfg/models/rt-detr/trdetr-l-smallighting.yaml"
 rtdet = RTDETR(config_path)
 
+"""
 # 2. 加载权重并自动冻结匹配层
 rtdet = load_weights_with_freeze(
     pretrained_path='rtdetr-l.pt',
@@ -201,6 +202,9 @@ get_trainable_params_info(rtdet)
 # 4. 打印模型信息
 print(f"\n{'='*70}")
 rtdet.info()
+
+"""
+
 
 # 5. 训练（匹配层已冻结，只训练不匹配层）
 results = rtdet.train(
