@@ -13,7 +13,7 @@ backbone:
 
 head:
   - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 5 input_proj.2
-  - [-1, 1, AIFI, [1024, 8]]
+  - [-1, 1, SPPELAN, [1024, 256]]
   - [-1, 1, Conv, [256, 1, 1]]  # 7, Y5, lateral_convs.0
 
   - [-1, 1, nn.Upsample, [None, 2, 'nearest']] # 8

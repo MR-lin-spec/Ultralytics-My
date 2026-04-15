@@ -7,14 +7,14 @@ import sys
 import platform
 
 import torch
-from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.tasks import RTDETRDetectionModel
 from ultralytics.utils import LOGGER, colorstr
 from ultralytics.utils.torch_utils import profile
 from datetime import datetime
 from ultralytics.utils.checks import check_yaml, git_describe
 
 
-Model = DetectionModel  # retain YOLO 'Model' class for backwards compatibility
+Model = RTDETRDetectionModel  # retain YOLO 'Model' class for backwards compatibility
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLO root directory
@@ -79,7 +79,7 @@ def select_device(device='', batch_size=0, newline=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='ultralytics/cfg/models/rt-detr/rtdetr-resnet50.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='ultralytics/cfg/models/rt-detr/trdetr-l-smallighting-SPPELAN-SimAM.yaml', help='model.yaml')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true',default=True, help='profile model speed')
@@ -96,10 +96,10 @@ if __name__ == '__main__':
     model.eval()
 
     # Options
-    if opt.line_profile:  # profile layer by layer
-        model(im, profile=True)
+    if opt.line_profile:  # profile_ops layer by layer
+        model(im, profile=True)     
 
-    elif opt.profile:  # profile forward-backward
+    elif opt.profile:  # profile_ops forward-backward
         results = profile(input=im, ops=[model], n=3)
 
     elif opt.test:  # test all models

@@ -1616,4 +1616,4 @@ def wasserstein_loss(pred, target, eps=1e-7, constant=12.8):
     wh_distance = ((w1 - w2) ** 2 + (h1 - h2) ** 2) / 4
 
     wasserstein_2 = center_distance + wh_distance
-    return torch.exp(-torch.sqrt(wasserstein_2) / constant)
+    return torch.exp(-(torch.sqrt(wasserstein_2) / constant)**2) #平方以增强敏感性

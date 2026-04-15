@@ -85,7 +85,12 @@ def parse_requirements(file_path=ROOT.parent / "requirements.txt", package=""):
 
     return requirements
 
-
+def git_describe(path=ROOT):  # path must be a directory
+    """Return human-readable git description, i.e. v5.0-5-g3e25f1e https://git-scm.com/docs/git-describe."""
+    try:
+        return subprocess.check_output(f"git -C {path} describe --tags --long --always", shell=True).decode()[:-1]
+    except:  # noqa E722
+        return ""
 def get_distribution_name(import_name: str) -> str:
     """Get the pip distribution name for a given import name (e.g., 'cv2' -> 'opencv-python-headless')."""
     for dist in metadata.distributions():

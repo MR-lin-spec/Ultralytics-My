@@ -185,7 +185,7 @@ def get_trainable_params_info(model):
 # ==================== 主程序 ====================
 
 # 1. 创建模型
-config_path = "/root/Ultralytics-My/ultralytics/cfg/models/rt-detr/trdetr-l-smallighting.yaml"
+config_path = "/root/Ultralytics-My/ultralytics/cfg/models/rt-detr/trdetr-l-smallighting-SPPELAN-SimAM-smalloss.yaml"
 rtdet = RTDETR(config_path)
 
 """
@@ -206,14 +206,27 @@ rtdet.info()
 """
 
 
+
+"""
+注意：添加小目标损失函数时，记得修改Loss.py和tal.py
+4-13 16.44:本轮跑的是轻量化backnone+SPPLEAN的模型 1.772hour
+4-13 19.00:本轮跑的是轻量化backnone的模型，未加入其他内容 1.737hour
+4-13 21.26:本轮跑的是轻量化backnone+SPPLEAN+SimAM的模型 1.715 hour
+4-14 8.32:本轮跑的是轻量化backnone+SPPLEAN+SimAM+smallloss的模型 1.742 hour
+4-14 10.31:本轮跑的是轻量化backnone+SPPLEAN+SimAM+smallloss 模拟雨天的模型 
+4-14 19.23:本轮跑的是轻量化backnone+SPPLEAN+SimAM+smallloss 模拟雪天的模型 
+
+
+"""
+
 # 5. 训练（匹配层已冻结，只训练不匹配层）
 results = rtdet.train(
-    data="/root/Ultralytics-My/ultralytics/cfg/datasets/railway-big-data-nocombine.yaml",
+    data="/root/Ultralytics-My/ultralytics/cfg/datasets/railway-big-data-combine.yaml",
     epochs=100,
     patience=50,
     save_json=True,
     save_log=True,
-    log_file="runs/train/exp/train_nocombine.log",
+    log_file="runs/train/exp/train_smallighting_RailSPPELAN_SimAM-smalloss_combine.log",
     
     # 优化器设置（针对部分训练）
     lr0=0.0001,        # 可以使用较大学习率，因为大部分参数已冻结

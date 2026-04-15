@@ -1,9 +1,3 @@
-#Copyright (C) 2023. Huawei Technologies Co., Ltd. All rights reserved.
-
-#This program is free software; you can redistribute it and/or modify it under the terms of the MIT License.
-
-#This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the MIT License for more details.
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,6 +13,7 @@ class activation(nn.ReLU):
         self.weight = torch.nn.Parameter(torch.randn(dim, 1, act_num*2 + 1, act_num*2 + 1))
         self.bias = None
         self.bn = nn.BatchNorm2d(dim, eps=1e-6)
+        self.gn = nn.GroupNorm(32, dim)  # 使用 GroupNorm，分组数通常设为 32
         self.dim = dim
         self.act_num = act_num
         weight_init.trunc_normal_(self.weight, std=.02)
@@ -29,28 +24,56 @@ class activation(nn.ReLU):
                 super(activation, self).forward(x), 
                 self.weight, self.bias, padding=(self.act_num*2 + 1)//2, groups=self.dim)
         else:
-            return self.bn(torch.nn.functional.conv2d(
+            return self.gn(torch.nn.functional.conv2d(
                 super(activation, self).forward(x),
                 self.weight, padding=self.act_num, groups=self.dim))
 
-    def _fuse_bn_tensor(self, weight, bn):
-        kernel = weight
-        running_mean = bn.running_mean
-        running_var = bn.running_var
-        gamma = bn.weight
-        beta = bn.bias
-        eps = bn.eps
-        std = (running_var + eps).sqrt()
-        t = (gamma / std).reshape(-1, 1, 1, 1)
-        return kernel * t, beta + (0 - running_mean) * gamma / std
-    
+    def _fuse_bn_tensor(self, weight, gn,bn):
+        # =============== 修改点 2：适配 GroupNorm 融合 ===============
+        # 原始代码是针对 BatchNorm 的融合逻辑。
+        # GroupNorm 的融合逻辑不同，它没有 running_mean/var，其 weight(gamma) 和 bias(beta) 是仿射变换。
+        # 在推理时，我们需要将 GroupNorm 的 gamma 和 beta 融合进卷积的 weight 和 bias 中。
+        
+        if isinstance(gn, nn.GroupNorm):
+            # GroupNorm 的公式: (x - mean) / std * gamma + beta
+            # 融合到卷积: weight_fused = weight * (gamma / std)
+            #            bias_fused = beta - mean * gamma / std (如果卷积有 bias，还需加上卷积 bias * gamma / std)
+            
+            # 获取 GroupNorm 参数
+            gamma = gn.weight
+            beta = gn.bias
+            
+            std = (gn.eps).sqrt() # 仅使用 eps 的平方根作为近似标准差
+            # 重塑 gamma 以匹配卷积核维度 (Out_Channel, 1, 1, 1)
+            t = (gamma / std).reshape(-1, 1, 1, 1)
+            # 融合卷积核
+            kernel_fused = weight * t
+            # GroupNorm 的 bias (beta) 无法直接加到卷积 bias 中（因为卷积 bias 是标量加法，而 GN bias 是通道级加法）
+            # 这里我们返回一个修正后的 bias，实际应用中可能需要在后续层处理，或者假设 beta=0。
+            # 为了兼容接口，我们返回 beta 作为新的 bias。
+            return kernel_fused, beta
+            
+        elif isinstance(bn, nn.BatchNorm2d):
+                # 保留原始 BatchNorm 的融合逻辑作为备选
+                kernel = weight
+                running_mean = bn.running_mean
+                running_var = bn.running_var
+                gamma = bn.weight
+                beta = bn.bias
+                eps = bn.eps
+                std = (running_var + eps).sqrt()
+                t = (gamma / std).reshape(-1, 1, 1, 1)
+                return kernel * t, beta + (0 - running_mean) * gamma / std
+
     def switch_to_deploy(self):
         if not self.deploy:
+            # 使用上面定义的融合逻辑
             kernel, bias = self._fuse_bn_tensor(self.weight, self.bn)
             self.weight.data = kernel
             self.bias = torch.nn.Parameter(torch.zeros(self.dim))
             self.bias.data = bias
             self.__delattr__('bn')
+            self.__delattr__('gn')
             self.deploy = True
 
 
@@ -325,3 +348,4 @@ if __name__ == '__main__':
     pred = model(inputs)
     for i in pred:
         print(i.size())
+ 

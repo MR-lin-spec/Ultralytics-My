@@ -5,3 +5,4 @@ from .Ghostnetv1 import *
 from .RailSPPCSPC import *
 from .EMA import *
 from .VanillaNet import *
+from .RailSPPELAN import *
