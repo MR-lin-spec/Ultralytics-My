@@ -221,12 +221,12 @@ rtdet.info()
 
 # 5. 训练（匹配层已冻结，只训练不匹配层）
 results = rtdet.train(
-    data="/root/Ultralytics-My/ultralytics/cfg/datasets/railway-big-data-combine.yaml",
+    data="/root/Ultralytics-My/ultralytics/cfg/datasets/railway-big-data-nocombine.yaml",
     epochs=100,
     patience=50,
     save_json=True,
     save_log=True,
-    log_file="runs/train/exp/train_smallighting_RailSPPELAN_SimAM-smalloss_combine.log",
+    log_file="runs/train/exp/train_smallighting_RailSPPELAN_SimAM-smalloss_nocombine.log",
     
     # 优化器设置（针对部分训练）
     lr0=0.0001,        # 可以使用较大学习率，因为大部分参数已冻结
