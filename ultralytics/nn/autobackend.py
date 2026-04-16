@@ -240,128 +240,42 @@ class AutoBackend(nn.Module):
             return getattr(self.backend, name)
         return super().__getattr__(name)
 
-    def forward(self, im, augment=False, visualize=False):
-        """
-        Runs inference on the YOLOv8 MultiBackend model.
+    def forward(
+        self,
+        im: torch.Tensor,
+        augment: bool = False,
+        visualize: bool = False,
+        embed: list | None = None,
+        **kwargs: Any,
+    ) -> torch.Tensor | list[torch.Tensor]:
+        """Run inference on an AutoBackend model.
 
         Args:
             im (torch.Tensor): The image tensor to perform inference on.
-            augment (bool): whether to perform data augmentation during inference, defaults to False
-            visualize (bool): whether to visualize the output predictions, defaults to False
+            augment (bool): Whether to perform data augmentation during inference.
+            visualize (bool): Whether to visualize the output predictions.
+            embed (list, optional): A list of layer indices to return embeddings from.
+            **kwargs (Any): Additional keyword arguments for model configuration.
 
         Returns:
-            (tuple): Tuple containing the raw output tensor, and processed output for visualization (if visualize=True)
+            (torch.Tensor | list[torch.Tensor]): The raw output tensor(s) from the model.
         """
-        b, ch, h, w = im.shape  # batch, channel, height, width
-        if self.fp16 and im.dtype != torch.float16:
-            im = im.half()  # to FP16
         if self.nhwc:
             im = im.permute(0, 2, 3, 1)  # torch BCHW to numpy BHWC shape(1,320,192,3)
+        if self.backend.fp16 and im.dtype != torch.float16:
+            im = im.half()
 
-        if self.pt or self.nn_module:  # PyTorch
-            y = self.model(im, augment=augment, visualize=visualize) if augment or visualize else self.model(im)
-        elif self.jit:  # TorchScript
-            y = self.model(im)
-        elif self.dnn:  # ONNX OpenCV DNN
-            im = im.cpu().numpy()  # torch to numpy
-            self.net.setInput(im)
-            y = self.net.forward()
-        elif self.onnx:  # ONNX Runtime
-            im = im.cpu().numpy()  # torch to numpy
-            y = self.session.run(self.output_names, {self.session.get_inputs()[0].name: im})
-        elif self.xml:  # OpenVINO
-            im = im.cpu().numpy()  # FP32
-            y = list(self.ov_compiled_model(im).values())
-        elif self.engine:  # TensorRT
-            if self.dynamic and im.shape != self.bindings['images'].shape:
-                i = self.model.get_binding_index('images')
-                self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
-                self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
-                for name in self.output_names:
-                    i = self.model.get_binding_index(name)
-                    self.bindings[name].data.resize_(tuple(self.context.get_binding_shape(i)))
-            s = self.bindings['images'].shape
-            assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
-            self.binding_addrs['images'] = int(im.data_ptr())
-            self.context.execute_v2(list(self.binding_addrs.values()))
-            y = [self.bindings[x].data for x in sorted(self.output_names)]
-        elif self.coreml:  # CoreML
-            im = im[0].cpu().numpy()
-            im_pil = Image.fromarray((im * 255).astype('uint8'))
-            # im = im.resize((192, 320), Image.BILINEAR)
-            y = self.model.predict({'image': im_pil})  # coordinates are xywh normalized
-            if 'confidence' in y:
-                raise TypeError('Ultralytics only supports inference of non-pipelined CoreML models exported with '
-                                f"'nms=False', but 'model={w}' has an NMS pipeline created by an 'nms=True' export.")
-                # TODO: CoreML NMS inference handling
-                # from ultralytics.utils.ops import xywh2xyxy
-                # box = xywh2xyxy(y['coordinates'] * [[w, h, w, h]])  # xyxy pixels
-                # conf, cls = y['confidence'].max(1), y['confidence'].argmax(1).astype(np.float32)
-                # y = np.concatenate((box, conf.reshape(-1, 1), cls.reshape(-1, 1)), 1)
-            elif len(y) == 1:  # classification model
-                y = list(y.values())
-            elif len(y) == 2:  # segmentation model
-                y = list(reversed(y.values()))  # reversed for segmentation models (pred, proto)
-        elif self.paddle:  # PaddlePaddle
-            im = im.cpu().numpy().astype(np.float32)
-            self.input_handle.copy_from_cpu(im)
-            self.predictor.run()
-            y = [self.predictor.get_output_handle(x).copy_to_cpu() for x in self.output_names]
-        elif self.ncnn:  # ncnn
-            mat_in = self.pyncnn.Mat(im[0].cpu().numpy())
-            ex = self.net.create_extractor()
-            input_names, output_names = self.net.input_names(), self.net.output_names()
-            ex.input(input_names[0], mat_in)
-            y = []
-            for output_name in output_names:
-                mat_out = self.pyncnn.Mat()
-                ex.extract(output_name, mat_out)
-                y.append(np.array(mat_out)[None])
-        elif self.triton:  # NVIDIA Triton Inference Server
-            im = im.cpu().numpy()  # torch to numpy
-            y = self.model(im)
-        else:  # TensorFlow (SavedModel, GraphDef, Lite, Edge TPU)
-            im = im.cpu().numpy()
-            if self.saved_model:  # SavedModel
-                y = self.model(im, training=False) if self.keras else self.model(im)
-                if not isinstance(y, list):
-                    y = [y]
-            elif self.pb:  # GraphDef
-                y = self.frozen_func(x=self.tf.constant(im))
-                if len(y) == 2 and len(self.names) == 999:  # segments and names not defined
-                    ip, ib = (0, 1) if len(y[0].shape) == 4 else (1, 0)  # index of protos, boxes
-                    nc = y[ib].shape[1] - y[ip].shape[3] - 4  # y = (1, 160, 160, 32), (1, 116, 8400)
-                    self.names = {i: f'class{i}' for i in range(nc)}
-            else:  # Lite or Edge TPU
-                details = self.input_details[0]
-                integer = details['dtype'] in (np.int8, np.int16)  # is TFLite quantized int8 or int16 model
-                if integer:
-                    scale, zero_point = details['quantization']
-                    im = (im / scale + zero_point).astype(details['dtype'])  # de-scale
-                self.interpreter.set_tensor(details['index'], im)
-                self.interpreter.invoke()
-                y = []
-                for output in self.output_details:
-                    x = self.interpreter.get_tensor(output['index'])
-                    if integer:
-                        scale, zero_point = output['quantization']
-                        x = (x.astype(np.float32) - zero_point) * scale  # re-scale
-                    if x.ndim > 2:  # if task is not classification
-                        # Denormalize xywh by image size. See https://github.com/ultralytics/ultralytics/pull/1695
-                        # xywh are normalized in TFLite/EdgeTPU to mitigate quantization error of integer models
-                        x[:, [0, 2]] *= w
-                        x[:, [1, 3]] *= h
-                    y.append(x)
-            # TF segment fixes: export is reversed vs ONNX export and protos are transposed
-            if len(y) == 2:  # segment with (det, proto) output order reversed
-                if len(y[1].shape) != 4:
-                    y = list(reversed(y))  # should be y = (1, 116, 8400), (1, 160, 160, 32)
-                y[1] = np.transpose(y[1], (0, 3, 1, 2))  # should be y = (1, 116, 8400), (1, 32, 160, 160)
-            y = [x if isinstance(x, np.ndarray) else x.numpy() for x in y]
+        # Build forward kwargs based on backend type
+        forward_kwargs = {}
+        if self.format == "pt":
+            forward_kwargs = {"augment": augment, "visualize": visualize, "embed": embed, **kwargs}
 
-        # for x in y:
-        #     print(type(x), len(x)) if isinstance(x, (list, tuple)) else print(type(x), x.shape)  # debug shapes
+        y = self.backend.forward(im, **forward_kwargs)
+
         if isinstance(y, (list, tuple)):
+            if len(self.names) == 999 and (self.task == "segment" or len(y) == 2):  # segments and names not defined
+                nc = y[0].shape[1] - y[1].shape[1] - 4  # y = (1, 116, 8400), (1, 32, 160, 160)
+                self.names = {i: f"class{i}" for i in range(nc)}
             return self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
         else:
             return self.from_numpy(y)
