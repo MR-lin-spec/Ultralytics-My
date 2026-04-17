@@ -36,7 +36,10 @@ ultralytics.egg-info
 #  before PyInstaller builds the exe, so as to inject date/other info into it.
 *.manifest
 *.spec
-
+*.tflite
+*.onnx
+*.txt
+*.cache
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
